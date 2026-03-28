@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 > For user-friendly release highlights, see the [GitHub Releases](https://github.com/ZhuLinsen/daily_stock_analysis/releases) page.
 
+> Pending next release: fixes #877. `GeminiAnalyzer` no longer prints prompt or model-response body previews in default INFO logs; explicit debug mode now emits only redacted, single-line, truncated previews, with regression coverage added.
+
 ## [Unreleased]
 
 <!-- 新条目格式：- [类型] 描述（类型取值：新功能/改进/修复/文档/测试/chore）-->
