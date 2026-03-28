@@ -230,6 +230,14 @@ def test_sanitize_llm_log_preview_redacts_single_quoted_credential_fields():
         ("Authorization: Bearer raw-secret-token", "Authorization=Bearer [REDACTED]"),
         ("Authorization: Basic dXNlcjpwYXNz", "Authorization=Basic [REDACTED]"),
         ("Authorization: Token abc123", "Authorization=Token [REDACTED]"),
+        (
+            "Authorization: AWS4-HMAC-SHA256 Credential=AKIA..., Signature=deadbeef",
+            "Authorization=AWS4-HMAC-SHA256 [REDACTED]",
+        ),
+        (
+            'Authorization: Digest username="Mufasa", realm="http-auth@example.org", response="6629fae49393a05397450978507c4ef1"',
+            "Authorization=Digest [REDACTED]",
+        ),
     ],
 )
 def test_sanitize_llm_log_preview_redacts_authorization_headers(raw_preview, expected_preview):

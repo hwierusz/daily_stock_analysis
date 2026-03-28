@@ -79,6 +79,14 @@ def _replace_authorization_preview(match) -> str:
     return f"{match.group(1)}={_redact_authorization_preview_value(match.group('value'))}"
 
 
+_LLM_RAW_LINE_SENSITIVE_PATTERNS = (
+    (
+        re.compile(r"(?im)\b(authorization)\s*[:=]\s*(?P<value>[^\n\r]*)"),
+        _replace_authorization_preview,
+    ),
+)
+
+
 _LLM_SENSITIVE_PATTERNS = (
     (
         re.compile(r'(?i)(["\'])(authorization)\1\s*([:=])\s*(["\'])(?P<value>(?:\\.|(?!\4).)*)\4'),
@@ -134,7 +142,10 @@ def _should_log_llm_content_preview(config: Optional[Config] = None) -> bool:
 
 def _sanitize_llm_log_preview(content: str, max_chars: int = _LLM_PREVIEW_MAX_CHARS) -> str:
     """Normalize, redact, and truncate preview text for logs."""
-    normalized = re.sub(r"\s+", " ", str(content or "")).strip()
+    sanitized_raw = str(content or "")
+    for pattern, replacement in _LLM_RAW_LINE_SENSITIVE_PATTERNS:
+        sanitized_raw = pattern.sub(replacement, sanitized_raw)
+    normalized = re.sub(r"\s+", " ", sanitized_raw).strip()
     if not normalized:
         return "[empty]"
     sanitized = normalized
