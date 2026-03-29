@@ -687,6 +687,7 @@ class SerpAPISearchProvider(BaseSearchProvider):
         value: Any,
         *,
         label: Optional[str] = None,
+        allow_unlabeled_scalar: bool = False,
     ) -> List[str]:
         """把 rich_snippet.detected_extensions 展平为可读文本。"""
         if isinstance(value, dict):
@@ -707,6 +708,7 @@ class SerpAPISearchProvider(BaseSearchProvider):
                     cls._flatten_rich_snippet_values(
                         nested_value,
                         label=label,
+                        allow_unlabeled_scalar=True,
                     )
                 )
             return flattened
@@ -718,7 +720,10 @@ class SerpAPISearchProvider(BaseSearchProvider):
         if label:
             return [f"{label}: {text}"]
 
-        return [text]
+        if allow_unlabeled_scalar:
+            return [text]
+
+        return []
 
     @classmethod
     def _build_organic_snippet(

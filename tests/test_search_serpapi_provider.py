@@ -183,6 +183,40 @@ class TestSerpAPISearchProvider(unittest.TestCase):
         self.assertIn("votes: 0", resp.results[0].snippet)
         mock_fetch.assert_not_called()
 
+    def test_provider_ignores_scalar_detected_extensions_and_still_fetches(self) -> None:
+        provider = SerpAPISearchProvider(["dummy_key"])
+
+        with self._patch_serpapi(
+            {
+                "organic_results": [
+                    {
+                        "title": "Malformed detected extensions result",
+                        "link": "https://example.com/malformed-detected-extensions",
+                        "snippet": "摘要过短",
+                        "source": "Example",
+                        "rich_snippet": {
+                            "top": {
+                                "detected_extensions": True,
+                            },
+                        },
+                    }
+                ]
+            }
+        ), patch(
+            "src.search_service.fetch_url_content",
+            return_value="网页正文补充信息 " * 40,
+        ) as mock_fetch:
+            resp = provider.search("阿里巴巴 财报", max_results=3)
+
+        self.assertTrue(resp.success)
+        self.assertEqual(len(resp.results), 1)
+        mock_fetch.assert_called_once_with(
+            "https://example.com/malformed-detected-extensions",
+            timeout=SerpAPISearchProvider._ORGANIC_CONTENT_FETCH_TIMEOUT,
+        )
+        self.assertNotIn("True", resp.results[0].snippet)
+        self.assertIn("【网页详情】", resp.results[0].snippet)
+
     def test_provider_ignores_malformed_rich_snippet_sections(self) -> None:
         provider = SerpAPISearchProvider(["dummy_key"])
         long_enough_snippet = "已有摘要，足够避免补抓。 " * 16
