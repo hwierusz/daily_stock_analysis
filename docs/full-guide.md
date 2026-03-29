@@ -295,6 +295,8 @@ daily_stock_analysis/
 | `MAX_WORKERS` | 并发线程数 | `3` |
 | `MARKET_REVIEW_ENABLED` | 启用大盘复盘 | `true` |
 | `MARKET_REVIEW_REGION` | 大盘复盘市场区域：cn(A股)、us(美股)、both(两者)，us 适合仅关注美股的用户 | `cn` |
+| `DAILY_RUN_SOFT_TIMEOUT_SECONDS` | 每日分析总时长软预算（秒）；接近上限时会跳过剩余股票或大盘复盘，`0` 表示禁用 | `1500` |
+| `DAILY_RUN_SOFT_TIMEOUT_GRACE_SECONDS` | 接近总预算上限时预留的缓冲秒数，用于收尾、落盘和通知发送 | `180` |
 | `TRADING_DAY_CHECK_ENABLED` | 交易日检查：默认 `true`，非交易日跳过执行；设为 `false` 或使用 `--force-run` 可强制执行（Issue #373） | `true` |
 | `SCHEDULE_ENABLED` | 启用定时任务 | `false` |
 | `SCHEDULE_TIME` | 定时执行时间 | `18:00` |
@@ -505,6 +507,8 @@ python main.py --schedule --no-run-immediately
 | `SCHEDULE_ENABLED` | 是否启用定时任务 | `false` | `true` |
 | `SCHEDULE_TIME` | 每日执行时间 (HH:MM) | `18:00` | `09:30` |
 | `SCHEDULE_RUN_IMMEDIATELY` | 启动服务时是否立即运行一次 | `true` | `false` |
+| `DAILY_RUN_SOFT_TIMEOUT_SECONDS` | 每日分析总时长软预算（秒），超预算后跳过尚未开始的股票或大盘复盘 | `1500` | `1500` |
+| `DAILY_RUN_SOFT_TIMEOUT_GRACE_SECONDS` | 接近预算上限时预留给收尾的缓冲秒数 | `180` | `180` |
 | `TRADING_DAY_CHECK_ENABLED` | 交易日检查：非交易日跳过执行；设为 `false` 可强制执行 | `true` | `false` |
 
 例如在 Docker 中配置：
@@ -513,6 +517,8 @@ python main.py --schedule --no-run-immediately
 # 设置启动时不立即分析
 docker run -e SCHEDULE_ENABLED=true -e SCHEDULE_RUN_IMMEDIATELY=false ...
 ```
+
+> 软预算是 `best-effort` 降级保护，不会强杀已开始的底层网络调用；它的作用是阻止主流程在接近总预算上限时继续启动新的股票分析或大盘复盘步骤，优先保留已完成结果。
 
 #### 交易日判断（Issue #373）
 

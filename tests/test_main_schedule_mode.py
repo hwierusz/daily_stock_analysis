@@ -6,7 +6,7 @@ import tempfile
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 from tests.litellm_stub import ensure_litellm_stub
 
@@ -70,6 +70,18 @@ class MainScheduleModeTestCase(unittest.TestCase):
             "schedule_time": "18:00",
             "schedule_run_immediately": True,
             "run_immediately": True,
+            "daily_run_soft_timeout_seconds": 1500,
+            "daily_run_soft_timeout_grace_seconds": 180,
+            "market_review_enabled": True,
+            "merge_email_notification": False,
+            "single_stock_notify": False,
+            "analysis_delay": 0,
+            "backtest_enabled": False,
+            "stock_list": ["600519"],
+            "trading_day_check_enabled": True,
+            "market_review_region": "cn",
+            "gemini_api_key": None,
+            "openai_api_key": None,
         }
         defaults.update(overrides)
         return _DummyConfig(**defaults)
@@ -115,6 +127,43 @@ class MainScheduleModeTestCase(unittest.TestCase):
 
         self.assertEqual(exit_code, 0)
         run_full_analysis.assert_called_once_with(config, args, ["600519", "000001"])
+
+    def test_run_full_analysis_skips_market_review_when_remaining_budget_is_too_small(self) -> None:
+        args = self._make_args(no_notify=True)
+        config = self._make_config(
+            daily_run_soft_timeout_seconds=1,
+            daily_run_soft_timeout_grace_seconds=1,
+            trading_day_check_enabled=False,
+        )
+        pipeline = MagicMock()
+        pipeline.run.return_value = []
+
+        with patch("main.StockAnalysisPipeline", return_value=pipeline), \
+             patch("main.run_market_review") as run_market_review, \
+             patch("main.time.monotonic", side_effect=[0.0, 1.0]):
+            main.run_full_analysis(config, args, ["600519"])
+
+        run_market_review.assert_not_called()
+        pipeline.run.assert_called_once()
+
+    def test_market_review_only_mode_skips_when_budget_is_already_exhausted(self) -> None:
+        args = self._make_args(market_review=True, no_notify=True, force_run=True)
+        config = self._make_config(
+            daily_run_soft_timeout_seconds=1,
+            daily_run_soft_timeout_grace_seconds=1,
+            trading_day_check_enabled=False,
+        )
+        config.has_search_capability_enabled = lambda: False
+
+        with patch("main.parse_arguments", return_value=args), \
+             patch("main.get_config", return_value=config), \
+             patch("main.setup_logging"), \
+             patch("main.run_market_review") as run_market_review, \
+             patch("main.time.monotonic", side_effect=[0.0, 1.0]):
+            exit_code = main.main()
+
+        self.assertEqual(exit_code, 0)
+        run_market_review.assert_not_called()
 
 
 if __name__ == "__main__":

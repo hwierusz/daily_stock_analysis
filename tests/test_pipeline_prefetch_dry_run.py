@@ -7,7 +7,7 @@ import os
 import sys
 import unittest
 from types import SimpleNamespace
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
@@ -27,6 +27,8 @@ class TestPipelinePrefetchBehavior(unittest.TestCase):
         pipeline.db = MagicMock()
         pipeline.db.has_today_data.return_value = False
         pipeline.process_single_stock = MagicMock(return_value=process_result)
+        pipeline._save_local_report = MagicMock()
+        pipeline._send_notifications = MagicMock()
         pipeline.config = SimpleNamespace(
             stock_list=["000001"],
             refresh_stock_list=lambda: None,
@@ -51,6 +53,28 @@ class TestPipelinePrefetchBehavior(unittest.TestCase):
         pipeline.fetcher_manager.prefetch_stock_names.assert_called_once_with(
             ["000001"], use_bulk=False
         )
+
+    def test_run_stops_submitting_new_stocks_when_soft_timeout_buffer_is_hit(self):
+        pipeline = self._build_pipeline(process_result=SimpleNamespace(code="000001"))
+        pipeline.process_single_stock = MagicMock(
+            side_effect=[
+                SimpleNamespace(code="000001"),
+                SimpleNamespace(code="000002"),
+                SimpleNamespace(code="000003"),
+            ]
+        )
+
+        with patch("src.core.pipeline.time.monotonic", side_effect=[0.0, 0.45, 0.45]):
+            results = pipeline.run(
+                stock_codes=["000001", "000002", "000003"],
+                dry_run=False,
+                send_notification=False,
+                soft_timeout_deadline=0.5,
+                soft_timeout_grace_seconds=0.1,
+            )
+
+        self.assertEqual([result.code for result in results], ["000001"])
+        self.assertEqual(pipeline.process_single_stock.call_count, 1)
 
 
 if __name__ == "__main__":

@@ -78,5 +78,29 @@ class TestSensitiveFieldsUsePasswordControl(unittest.TestCase):
                          f"Sensitive fields with non-password ui_control: {violations}")
 
 
+class TestDailyRunBudgetFieldsRegistered(unittest.TestCase):
+    """Daily run timeout guard fields must be exposed in config schema."""
+
+    def test_daily_run_budget_fields_exist(self):
+        budget_field = get_field_definition("DAILY_RUN_SOFT_TIMEOUT_SECONDS")
+        grace_field = get_field_definition("DAILY_RUN_SOFT_TIMEOUT_GRACE_SECONDS")
+
+        self.assertEqual(budget_field["category"], "system")
+        self.assertEqual(grace_field["category"], "system")
+        self.assertEqual(budget_field["data_type"], "integer")
+        self.assertEqual(grace_field["data_type"], "integer")
+
+    def test_schema_response_includes_daily_run_budget_fields(self):
+        schema = build_schema_response()
+        system_cat = next(
+            (c for c in schema["categories"] if c["category"] == "system"),
+            None,
+        )
+        self.assertIsNotNone(system_cat, "system category missing")
+        field_keys = {f["key"] for f in system_cat["fields"]}
+        self.assertIn("DAILY_RUN_SOFT_TIMEOUT_SECONDS", field_keys)
+        self.assertIn("DAILY_RUN_SOFT_TIMEOUT_GRACE_SECONDS", field_keys)
+
+
 if __name__ == "__main__":
     unittest.main()

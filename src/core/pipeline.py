@@ -1167,7 +1167,9 @@ class StockAnalysisPipeline:
         stock_codes: Optional[List[str]] = None,
         dry_run: bool = False,
         send_notification: bool = True,
-        merge_notification: bool = False
+        merge_notification: bool = False,
+        soft_timeout_deadline: Optional[float] = None,
+        soft_timeout_grace_seconds: float = 0.0,
     ) -> List[AnalysisResult]:
         """
         运行完整的分析流程
@@ -1183,6 +1185,8 @@ class StockAnalysisPipeline:
             dry_run: 是否仅获取数据不分析
             send_notification: 是否发送推送通知
             merge_notification: 是否合并推送（跳过本次推送，由 main 层合并个股+大盘后统一发送，Issue #190）
+            soft_timeout_deadline: 总时长软预算的单调时钟 deadline，None 表示禁用
+            soft_timeout_grace_seconds: 接近预算上限时停止启动新任务的缓冲区
 
         Returns:
             分析结果列表
@@ -1231,25 +1235,74 @@ class StockAnalysisPipeline:
             logger.info(f"已启用单股推送模式：每分析完一只股票立即推送（报告类型: {report_type_str}）")
         
         results: List[AnalysisResult] = []
-        
-        # 使用线程池并发处理
-        # 注意：max_workers 设置较低（默认3）以避免触发反爬
-        with ThreadPoolExecutor(max_workers=self.max_workers) as executor:
-            # 提交任务
-            future_to_code = {
+        total_codes = len(stock_codes)
+        submitted_codes: List[str] = []
+        skipped_due_to_budget: List[str] = []
+
+        def _remaining_budget_seconds() -> Optional[float]:
+            if soft_timeout_deadline is None:
+                return None
+            return max(0.0, soft_timeout_deadline - time.monotonic())
+
+        def _can_start_another_stock() -> bool:
+            remaining = _remaining_budget_seconds()
+            if remaining is None:
+                return True
+            return remaining > soft_timeout_grace_seconds
+
+        next_code_index = 0
+
+        def _submit_next_stock(executor: ThreadPoolExecutor, future_to_code: Dict[Any, str]) -> bool:
+            nonlocal next_code_index
+            if next_code_index >= total_codes:
+                return False
+            code = stock_codes[next_code_index]
+            next_code_index += 1
+            submitted_codes.append(code)
+            future_to_code[
                 executor.submit(
                     self.process_single_stock,
                     code,
                     skip_analysis=dry_run,
                     single_stock_notify=single_stock_notify and send_notification,
-                    report_type=report_type,  # Issue #119: 传递报告类型
+                    report_type=report_type,
                     analysis_query_id=uuid.uuid4().hex,
-                ): code
-                for code in stock_codes
-            }
+                )
+            ] = code
+            return True
+
+        def _skip_remaining_codes() -> None:
+            nonlocal next_code_index
+            if next_code_index >= total_codes:
+                return
+            newly_skipped = stock_codes[next_code_index:]
+            skipped_due_to_budget.extend(newly_skipped)
+            next_code_index = total_codes
+            remaining = _remaining_budget_seconds()
+            logger.warning(
+                "剩余预算%s，跳过未开始的 %d 只股票: %s",
+                (
+                    f" {remaining:.1f} 秒"
+                    if remaining is not None
+                    else ""
+                ),
+                len(newly_skipped),
+                ", ".join(newly_skipped),
+            )
+        
+        # 使用线程池并发处理
+        # 注意：max_workers 设置较低（默认3）以避免触发反爬
+        with ThreadPoolExecutor(max_workers=self.max_workers) as executor:
+            future_to_code: Dict[Any, str] = {}
+            while len(future_to_code) < self.max_workers and next_code_index < total_codes:
+                if not _can_start_another_stock():
+                    _skip_remaining_codes()
+                    break
+                _submit_next_stock(executor, future_to_code)
             
             # 收集结果
-            for idx, future in enumerate(as_completed(future_to_code)):
+            while future_to_code:
+                future = next(as_completed(future_to_code))
                 code = future_to_code[future]
                 try:
                     result = future.result()
@@ -1257,7 +1310,7 @@ class StockAnalysisPipeline:
                         results.append(result)
 
                     # Issue #128: 分析间隔 - 在个股分析和大盘分析之间添加延迟
-                    if idx < len(stock_codes) - 1 and analysis_delay > 0:
+                    if (future_to_code or next_code_index < total_codes) and analysis_delay > 0:
                         # 注意：此 sleep 发生在“主线程收集 future 的循环”中，
                         # 并不会阻止线程池中的任务同时发起网络请求。
                         # 因此它对降低并发请求峰值的效果有限；真正的峰值主要由 max_workers 决定。
@@ -1267,21 +1320,37 @@ class StockAnalysisPipeline:
 
                 except Exception as e:
                     logger.error(f"[{code}] 任务执行失败: {e}")
+                finally:
+                    future_to_code.pop(future, None)
+
+                while len(future_to_code) < self.max_workers and next_code_index < total_codes:
+                    if not _can_start_another_stock():
+                        _skip_remaining_codes()
+                        break
+                    _submit_next_stock(executor, future_to_code)
         
         # 统计
         elapsed_time = time.time() - start_time
+        submitted_count = len(submitted_codes)
+        skipped_count = len(skipped_due_to_budget)
         
         # dry-run 模式下，数据获取成功即视为成功
         if dry_run:
             # 检查哪些股票的数据今天已存在
-            success_count = sum(1 for code in stock_codes if self.db.has_today_data(code))
-            fail_count = len(stock_codes) - success_count
+            success_count = sum(1 for code in submitted_codes if self.db.has_today_data(code))
+            fail_count = submitted_count - success_count
         else:
             success_count = len(results)
-            fail_count = len(stock_codes) - success_count
+            fail_count = submitted_count - success_count
         
         logger.info("===== 分析完成 =====")
-        logger.info(f"成功: {success_count}, 失败: {fail_count}, 耗时: {elapsed_time:.2f} 秒")
+        logger.info(
+            "成功: %s, 失败: %s, 跳过: %s, 耗时: %.2f 秒",
+            success_count,
+            fail_count,
+            skipped_count,
+            elapsed_time,
+        )
         
         # 保存报告到本地文件（无论是否推送通知都保存）
         if results and not dry_run:

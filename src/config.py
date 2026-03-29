@@ -650,6 +650,8 @@ class Config:
     schedule_time: str = "18:00"              # 每日推送时间（HH:MM 格式）
     schedule_run_immediately: bool = True     # 启动时是否立即执行一次
     run_immediately: bool = True              # 启动时是否立即执行一次（非定时模式）
+    daily_run_soft_timeout_seconds: int = 1500  # 每日任务总时长软预算（秒），0 表示禁用
+    daily_run_soft_timeout_grace_seconds: int = 180  # 接近预算上限时停止启动新重任务的缓冲区（秒）
     market_review_enabled: bool = True        # 是否启用大盘复盘
     # 大盘复盘市场区域：cn(A股)、us(美股)、both(两者)，us 适合仅关注美股的用户
     market_review_region: str = "cn"
@@ -1248,6 +1250,18 @@ class Config:
             schedule_time=os.getenv('SCHEDULE_TIME', '18:00'),
             schedule_run_immediately=schedule_run_immediately,
             run_immediately=legacy_run_immediately,
+            daily_run_soft_timeout_seconds=parse_env_int(
+                os.getenv('DAILY_RUN_SOFT_TIMEOUT_SECONDS'),
+                1500,
+                field_name='DAILY_RUN_SOFT_TIMEOUT_SECONDS',
+                minimum=0,
+            ),
+            daily_run_soft_timeout_grace_seconds=parse_env_int(
+                os.getenv('DAILY_RUN_SOFT_TIMEOUT_GRACE_SECONDS'),
+                180,
+                field_name='DAILY_RUN_SOFT_TIMEOUT_GRACE_SECONDS',
+                minimum=0,
+            ),
             market_review_enabled=os.getenv('MARKET_REVIEW_ENABLED', 'true').lower() == 'true',
             market_review_region=cls._parse_market_review_region(
                 os.getenv('MARKET_REVIEW_REGION', 'cn')

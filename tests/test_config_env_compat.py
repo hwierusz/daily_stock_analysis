@@ -194,6 +194,24 @@ class ConfigEnvCompatibilityTestCase(unittest.TestCase):
         self.assertEqual(config.max_workers, 3)
         self.assertEqual(config.webui_port, 8000)
 
+    @patch("src.config.setup_env")
+    @patch.object(Config, "_parse_litellm_yaml", return_value=[])
+    def test_daily_run_soft_timeout_env_values_are_loaded(
+        self,
+        _mock_parse_yaml,
+        _mock_setup_env,
+    ) -> None:
+        env = {
+            "DAILY_RUN_SOFT_TIMEOUT_SECONDS": "1200",
+            "DAILY_RUN_SOFT_TIMEOUT_GRACE_SECONDS": "90",
+        }
+
+        with patch.dict(os.environ, env, clear=True):
+            config = Config._load_from_env()
+
+        self.assertEqual(config.daily_run_soft_timeout_seconds, 1200)
+        self.assertEqual(config.daily_run_soft_timeout_grace_seconds, 90)
+
 
 if __name__ == "__main__":
     unittest.main()

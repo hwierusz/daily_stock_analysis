@@ -11,6 +11,7 @@
 """
 
 import logging
+import time
 from datetime import datetime
 from typing import Optional
 
@@ -31,6 +32,8 @@ def run_market_review(
     send_notification: bool = True,
     merge_notification: bool = False,
     override_region: Optional[str] = None,
+    soft_timeout_deadline: Optional[float] = None,
+    soft_timeout_grace_seconds: float = 0.0,
 ) -> Optional[str]:
     """
     执行大盘复盘分析
@@ -42,6 +45,8 @@ def run_market_review(
         send_notification: 是否发送通知
         merge_notification: 是否合并推送（跳过本次推送，由 main 层合并个股+大盘后统一发送，Issue #190）
         override_region: 覆盖 config 的 market_review_region（Issue #373 交易日过滤后有效子集）
+        soft_timeout_deadline: 总时长软预算 deadline，None 表示禁用
+        soft_timeout_grace_seconds: 接近预算上限时停止进入新重步骤的缓冲区
 
     Returns:
         复盘报告文本
@@ -56,7 +61,28 @@ def run_market_review(
     if region not in ('cn', 'us', 'both'):
         region = 'cn'
 
+    def _remaining_budget_seconds() -> Optional[float]:
+        if soft_timeout_deadline is None:
+            return None
+        return max(0.0, soft_timeout_deadline - time.monotonic())
+
+    def _has_budget(stage_name: str) -> bool:
+        remaining = _remaining_budget_seconds()
+        if remaining is None:
+            return True
+        if remaining <= soft_timeout_grace_seconds:
+            logger.warning(
+                "剩余预算 %.1f 秒，跳过%s以避免任务接近总时长上限。",
+                remaining,
+                stage_name,
+            )
+            return False
+        return True
+
     try:
+        if not _has_budget('大盘复盘'):
+            return None
+
         if region == 'both':
             # 顺序执行 A 股 + 美股，合并报告
             cn_analyzer = MarketAnalyzer(
@@ -67,8 +93,12 @@ def run_market_review(
             )
             logger.info("生成 A 股大盘复盘报告...")
             cn_report = cn_analyzer.run_daily_review()
-            logger.info("生成美股大盘复盘报告...")
-            us_report = us_analyzer.run_daily_review()
+            us_report = None
+            if _has_budget('美股大盘复盘'):
+                logger.info("生成美股大盘复盘报告...")
+                us_report = us_analyzer.run_daily_review()
+            else:
+                logger.info("已保留 A 股复盘结果，跳过美股复盘。")
             review_report = ''
             if cn_report:
                 review_report = f"# A股大盘复盘\n\n{cn_report}"

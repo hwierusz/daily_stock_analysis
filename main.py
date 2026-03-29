@@ -255,6 +255,54 @@ def _compute_trading_day_filter(
     return (filtered_codes, effective_region, should_skip_all)
 
 
+def _resolve_daily_run_budget(config: Config) -> Tuple[Optional[float], float]:
+    """Resolve the optional soft deadline for a daily run."""
+    budget_seconds = max(0, int(getattr(config, 'daily_run_soft_timeout_seconds', 0) or 0))
+    if budget_seconds <= 0:
+        return (None, 0.0)
+
+    grace_seconds = max(
+        0.0,
+        float(getattr(config, 'daily_run_soft_timeout_grace_seconds', 0) or 0),
+    )
+    if grace_seconds >= budget_seconds:
+        grace_seconds = max(0.0, float(budget_seconds - 1))
+
+    logger.info(
+        "已启用每日任务总时长软预算: %s 秒（缓冲区 %s 秒）",
+        budget_seconds,
+        int(grace_seconds),
+    )
+    return (time.monotonic() + budget_seconds, grace_seconds)
+
+
+def _remaining_daily_run_budget_seconds(deadline: Optional[float]) -> Optional[float]:
+    """Return remaining wall-clock budget in seconds."""
+    if deadline is None:
+        return None
+    return max(0.0, deadline - time.monotonic())
+
+
+def _has_daily_run_budget_for_stage(
+    deadline: Optional[float],
+    grace_seconds: float,
+    *,
+    stage_name: str,
+) -> bool:
+    """Check whether the run should start a new expensive stage."""
+    remaining = _remaining_daily_run_budget_seconds(deadline)
+    if remaining is None:
+        return True
+    if remaining <= grace_seconds:
+        logger.warning(
+            "剩余预算 %.1f 秒，跳过%s以避免接近总时长上限。",
+            remaining,
+            stage_name,
+        )
+        return False
+    return True
+
+
 def run_full_analysis(
     config: Config,
     args: argparse.Namespace,
@@ -296,6 +344,7 @@ def run_full_analysis(
             and not getattr(args, 'no_market_review', False)
             and not config.single_stock_notify
         )
+        run_deadline, run_budget_grace_seconds = _resolve_daily_run_budget(config)
 
         # 创建调度器
         save_context_snapshot = None
@@ -315,7 +364,9 @@ def run_full_analysis(
             stock_codes=stock_codes,
             dry_run=args.dry_run,
             send_notification=not args.no_notify,
-            merge_notification=merge_notification
+            merge_notification=merge_notification,
+            soft_timeout_deadline=run_deadline,
+            soft_timeout_grace_seconds=run_budget_grace_seconds,
         )
 
         # Issue #128: 分析间隔 - 在个股分析和大盘分析之间添加延迟
@@ -326,8 +377,23 @@ def run_full_analysis(
             and not args.no_market_review
             and effective_region != ''
         ):
-            logger.info(f"等待 {analysis_delay} 秒后执行大盘复盘（避免API限流）...")
-            time.sleep(analysis_delay)
+            sleep_seconds = float(analysis_delay)
+            remaining_budget = _remaining_daily_run_budget_seconds(run_deadline)
+            if remaining_budget is not None:
+                max_sleep_seconds = max(0.0, remaining_budget - run_budget_grace_seconds)
+                if max_sleep_seconds <= 0:
+                    logger.info("剩余预算不足，跳过个股与大盘复盘之间的等待间隔。")
+                    sleep_seconds = 0.0
+                elif sleep_seconds > max_sleep_seconds:
+                    logger.info(
+                        "为保留大盘复盘缓冲区，将等待时间从 %.1f 秒收缩到 %.1f 秒。",
+                        sleep_seconds,
+                        max_sleep_seconds,
+                    )
+                    sleep_seconds = max_sleep_seconds
+            if sleep_seconds > 0:
+                logger.info("等待 %.1f 秒后执行大盘复盘（避免API限流）...", sleep_seconds)
+                time.sleep(sleep_seconds)
 
         # 2. 运行大盘复盘（如果启用且不是仅个股模式）
         market_report = ""
@@ -336,17 +402,24 @@ def run_full_analysis(
             and not args.no_market_review
             and effective_region != ''
         ):
-            review_result = run_market_review(
-                notifier=pipeline.notifier,
-                analyzer=pipeline.analyzer,
-                search_service=pipeline.search_service,
-                send_notification=not args.no_notify,
-                merge_notification=merge_notification,
-                override_region=effective_region,
-            )
-            # 如果有结果，赋值给 market_report 用于后续飞书文档生成
-            if review_result:
-                market_report = review_result
+            if _has_daily_run_budget_for_stage(
+                run_deadline,
+                run_budget_grace_seconds,
+                stage_name='大盘复盘',
+            ):
+                review_result = run_market_review(
+                    notifier=pipeline.notifier,
+                    analyzer=pipeline.analyzer,
+                    search_service=pipeline.search_service,
+                    send_notification=not args.no_notify,
+                    merge_notification=merge_notification,
+                    override_region=effective_region,
+                    soft_timeout_deadline=run_deadline,
+                    soft_timeout_grace_seconds=run_budget_grace_seconds,
+                )
+                # 如果有结果，赋值给 market_report 用于后续飞书文档生成
+                if review_result:
+                    market_report = review_result
 
         # Issue #190: 合并推送（个股+大盘复盘）
         if merge_notification and (results or market_report) and not args.no_notify:
@@ -663,13 +736,21 @@ def main() -> int:
             else:
                 logger.warning("未检测到 API Key (Gemini/OpenAI)，将仅使用模板生成报告")
 
-            run_market_review(
-                notifier=notifier,
-                analyzer=analyzer,
-                search_service=search_service,
-                send_notification=not args.no_notify,
-                override_region=effective_region,
-            )
+            run_deadline, run_budget_grace_seconds = _resolve_daily_run_budget(config)
+            if _has_daily_run_budget_for_stage(
+                run_deadline,
+                run_budget_grace_seconds,
+                stage_name='大盘复盘',
+            ):
+                run_market_review(
+                    notifier=notifier,
+                    analyzer=analyzer,
+                    search_service=search_service,
+                    send_notification=not args.no_notify,
+                    override_region=effective_region,
+                    soft_timeout_deadline=run_deadline,
+                    soft_timeout_grace_seconds=run_budget_grace_seconds,
+                )
             return 0
 
         # 模式2: 定时任务模式

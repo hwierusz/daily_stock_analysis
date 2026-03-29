@@ -269,6 +269,8 @@ Default schedule: Every weekday at **18:00 (Beijing Time)** automatic execution.
 | `MAX_WORKERS` | Concurrent threads | `3` |
 | `MARKET_REVIEW_ENABLED` | Enable market review | `true` |
 | `MARKET_REVIEW_REGION` | Market review region: cn (A-shares), us (US stocks), both | `cn` |
+| `DAILY_RUN_SOFT_TIMEOUT_SECONDS` | Soft wall-clock budget in seconds for a daily run; remaining stocks or market review are skipped near the limit, `0` disables it | `1500` |
+| `DAILY_RUN_SOFT_TIMEOUT_GRACE_SECONDS` | Reserved seconds kept as a shutdown buffer before the soft deadline | `180` |
 | `SCHEDULE_ENABLED` | Enable scheduled tasks | `false` |
 | `SCHEDULE_TIME` | Scheduled execution time | `18:00` |
 | `LOG_DIR` | Log directory | `./logs` |
@@ -279,6 +281,7 @@ Default schedule: Every weekday at **18:00 (Beijing Time)** automatic execution.
 > - The official quickstart documents `quotes.get(universes=["CN_Equity_A"])`, but online smoke tests confirmed two additional real-world constraints: universe access depends on plan permissions, and `quotes.get(symbols=[...])` has a per-request symbol limit.
 > - TickFlow currently returns `change_pct` / `amplitude` as ratio values; this integration normalizes them to the project's percent convention so they match AkShare / Tushare / efinance semantics.
 > - Per-stock analysis, realtime quote priority, and sector rankings fallback remain unchanged.
+> - The daily-run soft timeout is a best-effort guard. It does not hard-kill an already-started provider call; it only stops the scheduler from starting more stock jobs or market-review stages when the remaining wall-clock budget is too small.
 
 ---
 
