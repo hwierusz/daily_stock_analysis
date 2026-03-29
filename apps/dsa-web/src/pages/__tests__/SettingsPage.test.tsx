@@ -344,6 +344,22 @@ describe('SettingsPage', () => {
     });
   });
 
+  it('renders fallback version hint when package version is placeholder', async () => {
+    Object.assign(webBuildInfoMock, {
+      version: 'build-20260329-021530Z',
+      rawVersion: '0.0.0',
+      buildId: 'build-20260329-021530Z',
+      buildTime: '2026-03-29T02:15:30.000Z',
+      isFallbackVersion: true,
+    });
+
+    render(<SettingsPage />);
+
+    expect(await screen.findByRole('heading', { name: '版本信息' })).toBeInTheDocument();
+    expect(screen.getByText('当前 package.json 仍为占位版本 0.0.0')).toBeInTheDocument();
+    expect(screen.getByText('build-20260329-021530Z')).toBeInTheDocument();
+  });
+
   it('resets local drafts from the page header button', () => {
     useSystemConfigMock.mockReturnValue(buildSystemConfigState({ hasDirty: true, dirtyCount: 2 }));
 
