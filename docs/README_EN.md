@@ -130,7 +130,7 @@ Go to your forked repo → `Settings` → `Secrets and variables` → `Actions` 
 
 | Secret Name | Description | Required |
 |------------|------|:----:|
-| `STOCK_LIST` | Watchlist codes, e.g., `600519,AAPL,hk00700` | ✅ |
+| `STOCK_LIST` | Watchlist codes, supports optional `code:name` annotation, e.g., `600519:贵州茅台,AAPL,hk00700` | ✅ |
 | `TAVILY_API_KEYS` | [Tavily](https://tavily.com/) Search API (for news) | Recommended |
 | `MINIMAX_API_KEYS` | [MiniMax](https://platform.minimaxi.com/) Coding Plan Web Search (structured search results) | Optional |
 | `BRAVE_API_KEYS` | [Brave Search](https://brave.com/search/api/) API (privacy-focused, US stocks optimized) | Optional |
@@ -210,7 +210,7 @@ Configure the following:
 GEMINI_API_KEY=your_gemini_api_key_here
 
 # Stock Watchlist (Mixed markets supported)
-STOCK_LIST=600519,AAPL,hk00700
+STOCK_LIST=600519:贵州茅台,AAPL,hk00700
 
 # Notification Channel (Choose at least one)
 TELEGRAM_BOT_TOKEN=your_bot_token

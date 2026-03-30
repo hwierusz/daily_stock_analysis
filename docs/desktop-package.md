@@ -137,7 +137,7 @@ win-unpacked/
 - macOS 打包态下，`exe` 实际位于 `.app` 包内部，因此 `.env`、`data/`、`logs/` 也会跟着落在应用包内容器里；替换新的 DMG / `.app` 时，旧配置会随旧应用包一起被覆盖
 - 用户需要编辑 `.env` 配置以下内容：
   - `GEMINI_API_KEY` 或 `OPENAI_API_KEY`：AI 分析必需
-  - `STOCK_LIST`：自选股列表（逗号分隔）
+  - `STOCK_LIST`：自选股列表（逗号分隔，支持 `代码:备注` 语法）
   - 其他可选配置参考 `.env.example`
 
 ### 桌面端备份 / 恢复 `.env`

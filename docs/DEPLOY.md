@@ -197,7 +197,7 @@ journalctl -u stock-analyzer -f
 | 配置项 | 说明 | 获取方式 |
 |--------|------|----------|
 | `GEMINI_API_KEY` | AI 分析必需 | [Google AI Studio](https://aistudio.google.com/) |
-| `STOCK_LIST` | 自选股列表 | 逗号分隔的股票代码 |
+| `STOCK_LIST` | 自选股列表 | 逗号分隔，支持 `代码:备注`，如 `600519:贵州茅台,300750` |
 | `WECHAT_WEBHOOK_URL` | 微信推送 | 企业微信群机器人 |
 
 ### 可选配置项
@@ -371,7 +371,7 @@ git push -u origin main
 | `EMAIL_PASSWORD` | 邮箱授权码 | 可选* |
 | `SERVERCHAN3_SENDKEY` | Server酱³ Sendkey | 可选* |
 | `CUSTOM_WEBHOOK_URLS` | 自定义 Webhook（多个逗号分隔） | 可选* |
-| `STOCK_LIST` | 自选股列表，如 `600519,300750` | ✅ |
+| `STOCK_LIST` | 自选股列表，支持 `代码:备注`，如 `600519:贵州茅台,300750` | ✅ |
 | `TAVILY_API_KEYS` | Tavily 搜索 API Key | 推荐 |
 | `MINIMAX_API_KEYS` | MiniMax Coding Plan Web Search | 可选 |
 | `SERPAPI_API_KEYS` | SerpAPI Key | 可选 |

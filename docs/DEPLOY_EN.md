@@ -185,7 +185,7 @@ journalctl -u stock-analyzer -f
 | Config Item | Description | How to Get |
 |--------|------|----------|
 | `GEMINI_API_KEY` | Required for AI analysis | [Google AI Studio](https://aistudio.google.com/) |
-| `STOCK_LIST` | Watchlist | Comma-separated stock codes |
+| `STOCK_LIST` | Watchlist | Comma-separated, supports `code:name` annotation, e.g., `600519:贵州茅台,300750` |
 | `WECHAT_WEBHOOK_URL` | WeChat push | WeChat Work group bot |
 
 ### Optional Configuration
@@ -359,7 +359,7 @@ Add these Secrets:
 | `EMAIL_PASSWORD` | Email authorization code | Optional* |
 | `SERVERCHAN3_SENDKEY` | ServerChan v3 Sendkey | Optional* |
 | `CUSTOM_WEBHOOK_URLS` | Custom Webhook (comma-separated for multiple) | Optional* |
-| `STOCK_LIST` | Watchlist, e.g., `600519,300750` | ✅ |
+| `STOCK_LIST` | Watchlist, supports `code:name`, e.g., `600519:贵州茅台,300750` | ✅ |
 | `TAVILY_API_KEYS` | Tavily Search API Key | Recommended |
 | `MINIMAX_API_KEYS` | MiniMax Coding Plan Web Search | Optional |
 | `SERPAPI_API_KEYS` | SerpAPI Key | Optional |

@@ -108,7 +108,7 @@ Go to your forked repo → `Settings` → `Secrets and variables` → `Actions` 
 
 | Secret Name | Description | Required |
 |------------|------|:----:|
-| `STOCK_LIST` | Watchlist codes, e.g., `600519,300750,002594` | ✅ |
+| `STOCK_LIST` | Watchlist codes, supports optional `code:name` annotation, e.g., `600519:贵州茅台,300750,002594` | ✅ |
 | `TAVILY_API_KEYS` | [Tavily](https://tavily.com/) Search API (for news search) | Recommended |
 | `MINIMAX_API_KEYS` | [MiniMax](https://platform.minimaxi.com/) Coding Plan Web Search (structured search results) | Optional |
 | `BOCHA_API_KEYS` | [Bocha Search](https://open.bocha.cn/) Web Search API (Chinese search optimized, supports AI summaries, multiple keys comma-separated) | Optional |
@@ -265,7 +265,7 @@ Default schedule: Every weekday at **18:00 (Beijing Time)** automatic execution.
 
 | Variable | Description | Default |
 |--------|------|--------|
-| `STOCK_LIST` | Watchlist codes (comma-separated) | - |
+| `STOCK_LIST` | Watchlist codes (comma-separated, supports `code:name` annotation) | - |
 | `MAX_WORKERS` | Concurrent threads | `3` |
 | `MARKET_REVIEW_ENABLED` | Enable market review | `true` |
 | `MARKET_REVIEW_REGION` | Market review region: cn (A-shares), us (US stocks), both | `cn` |
@@ -598,7 +598,7 @@ System defaults to AkShare (free), also supports other data sources:
 Use `hk` prefix for HK stock codes:
 
 ```bash
-STOCK_LIST=600519,hk00700,hk01810
+STOCK_LIST=600519:贵州茅台,hk00700:腾讯控股,hk01810
 ```
 
 ### Multi-Model Switching
@@ -803,7 +803,7 @@ A: WeChat Work/Feishu have message length limits, system already auto-segments m
 A: AkShare uses scraping mechanism, may be temporarily rate-limited. System has retry mechanism configured, usually just wait a few minutes and retry.
 
 ### Q: How to add watchlist stocks?
-A: Modify `STOCK_LIST` environment variable, separate multiple codes with commas.
+A: Modify `STOCK_LIST` environment variable, separate multiple codes with commas. You can optionally annotate display names with `code:name` syntax (e.g., `600519:贵州茅台,hk00700`) to skip slow name lookups.
 
 ### Q: GitHub Actions not executing?
 A: Check if Actions is enabled, and if cron expression is correct (note it's UTC time).
