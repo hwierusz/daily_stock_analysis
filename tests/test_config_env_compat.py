@@ -253,13 +253,14 @@ class ConfigEnvCompatibilityTestCase(unittest.TestCase):
         self.assertTrue(config.schedule_run_immediately)
 
     @patch.object(Config, "_parse_litellm_yaml", return_value=[])
-    def test_runtime_mutable_keys_prefer_env_file_over_stale_process_env(
+    def test_runtime_mutable_keys_prefer_process_env_when_values_differ(
         self,
         _mock_parse_yaml,
     ) -> None:
-        """When both process env and .env contain a WEBUI-mutable key with
-        different values, the persisted .env must win.  This matches the Docker
-        restart path: container env may be stale while .env was updated by WebUI.
+        """When process env explicitly sets a WEBUI-mutable key to a value
+        that differs from .env (e.g. via docker-compose ``environment:``),
+        the process env must win because ``_capture_bootstrap_runtime_env_overrides``
+        runs before dotenv loads and the mismatch proves an intentional override.
         """
         with tempfile.TemporaryDirectory() as temp_dir:
             env_path = Path(temp_dir) / ".env"
@@ -291,12 +292,12 @@ class ConfigEnvCompatibilityTestCase(unittest.TestCase):
             ):
                 config = Config._load_from_env()
 
-        # .env values win over stale process env for WEBUI-mutable keys
-        self.assertEqual(config.stock_list, ["300750", "TSLA"])
-        self.assertTrue(config.schedule_enabled)
-        self.assertEqual(config.schedule_time, "09:30")
-        self.assertFalse(config.run_immediately)
-        self.assertTrue(config.schedule_run_immediately)
+        # Explicit process env overrides win when values differ from .env
+        self.assertEqual(config.stock_list, ["600519", "000001"])
+        self.assertFalse(config.schedule_enabled)
+        self.assertEqual(config.schedule_time, "18:00")
+        self.assertTrue(config.run_immediately)
+        self.assertFalse(config.schedule_run_immediately)
 
     @patch.object(Config, "_parse_litellm_yaml", return_value=[])
     def test_runtime_mutable_keys_use_process_env_when_absent_from_file(
