@@ -1931,6 +1931,22 @@ class SearchService:
     _MAINLAND_MARKET_SUFFIXES = {"SH", "SZ", "SS", "BJ"}
     _MAINLAND_MARKET_PREFIXES = ("SH", "SZ", "BJ")
     _MAINLAND_MARKET_TAGS = {"SHSE", "SZSE", "XSHG", "XSHE", "BJSE"}
+    _MAINLAND_NEWS_DOMAIN_HINTS = (
+        "eastmoney.com",
+        "10jqka.com.cn",
+        "cninfo.com.cn",
+        "stcn.com",
+        "cs.com.cn",
+        "cnstock.com",
+        "yicai.com",
+        "cls.cn",
+        "caixin.com",
+        "jrj.com.cn",
+        "sina.com.cn",
+        "xueqiu.com",
+        "sse.com.cn",
+        "szse.cn",
+    )
 
     def __init__(
         self,
@@ -2052,6 +2068,37 @@ class SearchService:
         return bool(value and cls._CHINESE_TEXT_RE.search(value))
 
     @classmethod
+    def _normalize_news_host(cls, value: Optional[str]) -> str:
+        """Normalize a URL/source hint into a hostname-like string."""
+        text = (value or "").strip().lower()
+        if not text:
+            return ""
+
+        normalized = text.split()[0]
+        if "://" not in normalized and "/" not in normalized:
+            host = normalized
+        else:
+            parsed = urlparse(
+                normalized if "://" in normalized else f"https://{normalized}"
+            )
+            host = parsed.netloc or parsed.path
+
+        return host.split("/")[0].split(":")[0].removeprefix("www.")
+
+    @classmethod
+    def _looks_like_mainland_news_source(cls, item: SearchResult) -> bool:
+        """Detect mainland-focused finance sources even when metadata is English-only."""
+        for raw_value in (item.url, item.source):
+            host = cls._normalize_news_host(raw_value)
+            if not host:
+                continue
+            if host.endswith(".cn"):
+                return True
+            if any(host == domain or host.endswith(f".{domain}") for domain in cls._MAINLAND_NEWS_DOMAIN_HINTS):
+                return True
+        return False
+
+    @classmethod
     def _normalize_mainland_stock_code(cls, stock_code: str) -> str:
         """Normalize common mainland exchange-qualified codes to their 6-digit form."""
         code = (stock_code or "").strip()
@@ -2114,8 +2161,9 @@ class SearchService:
 
     @classmethod
     def _is_chinese_news_result(cls, item: SearchResult) -> bool:
-        """Heuristic check for Chinese-language news items."""
-        return cls._contains_chinese_text(" ".join(filter(None, [item.title, item.snippet, item.source])))
+        """Heuristic check for Chinese-language or mainland-market news items."""
+        text = " ".join(filter(None, [item.title, item.snippet, item.source]))
+        return cls._contains_chinese_text(text) or cls._looks_like_mainland_news_source(item)
 
     @classmethod
     def _prioritize_news_language(

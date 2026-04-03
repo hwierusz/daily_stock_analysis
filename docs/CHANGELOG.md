@@ -21,6 +21,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - [文档] 补充飞书 Webhook 配置说明：强调 `FEISHU_WEBHOOK_URL` 是群通知必填项、`FEISHU_WEBHOOK_SECRET` 与飞书机器人「签名校验」必须两端同时启用或同时关闭、`FEISHU_APP_SECRET` 仅用于应用/Stream Bot 模式不可替代 Webhook；同步完善英文指南并在 `.env.example` 为相关配置项补充内联说明注释
 - [修复] Web 历史报告的“相关资讯”区增加历史快照提示，并将刷新/空态文案明确为重新读取已保存记录，避免把旧 `news_intel` 误认为当前搜索链路仍在返回海外资讯。
 - [修复] `search_stock_news()` 现在会把 `SH600519`、`000001.SZ` 等带交易所前后缀的 A 股代码也识别为中文优先场景，避免英文股票名或别名输入时重新落回海外资讯结果。
+- [修复] `search_stock_news()` / `search_comprehensive_intel()` 现在会把东方财富、巨潮资讯等大陆财经站点域名识别为 A 股中文优先语境，即使搜索引擎返回英文标题，也不会再把这类结果误判成“海外资讯”。
 
 - [新功能] 集成 Longbridge OpenAPI 作为美股/港股可选数据源；配置 `LONGBRIDGE_*` 后优先使用长桥获取日线与实时行情，YFinance / AkShare 兜底；未配置时行为与此前一致。长桥联调请使用 `tests/longbridge_live_smoke.py`（手动脚本，不参与 pytest 收集）。
 - [文档] 澄清 README（中/英/繁）中长桥「首选 / 兜底 / 未配置不调用」的边界；`docs/README_EN.md` / `docs/README_CHT.md` 顶部导航与完整指南链接改为 `./` 相对路径，避免在文档子目录下解析错误；`LONGBRIDGE_PRINT_QUOTE_PACKAGES` 与代码及 `.env.example` 对齐为未设置时默认关闭。

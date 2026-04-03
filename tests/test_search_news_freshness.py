@@ -19,12 +19,19 @@ if "newspaper" not in sys.modules:
 from src.search_service import SearchResponse, SearchResult, SearchService
 
 
-def _result(title: str, published_date: str | None) -> SearchResult:
+def _result(
+    title: str,
+    published_date: str | None,
+    *,
+    snippet: str = "snippet",
+    url: str | None = None,
+    source: str = "example.com",
+) -> SearchResult:
     return SearchResult(
         title=title,
-        snippet="snippet",
-        url=f"https://example.com/{title}",
-        source="example.com",
+        snippet=snippet,
+        url=url or f"https://example.com/{title}",
+        source=source,
         published_date=published_date,
     )
 
@@ -185,6 +192,45 @@ class SearchNewsFreshnessTestCase(unittest.TestCase):
         self.assertEqual([r.title for r in resp.results], ["中文资讯"])
         p1.search.assert_called_once()
         p2.search.assert_called_once()
+
+    def test_search_stock_news_treats_mainland_domain_result_as_preferred(self) -> None:
+        """Mainland finance domains should count as preferred even when metadata is English-only."""
+        fresh = datetime.now().date().isoformat()
+        service = SearchService(
+            bocha_keys=["dummy_key"],
+            searxng_public_instances_enabled=False,
+            news_max_age_days=3,
+            news_strategy_profile="short",
+        )
+
+        p1 = SimpleNamespace(
+            is_available=True,
+            name="P1",
+            search=MagicMock(
+                return_value=_response(
+                    [
+                        _result(
+                            "Moutai guidance update",
+                            fresh,
+                            snippet="Quarterly update from a mainland finance outlet.",
+                            url="https://finance.eastmoney.com/a/202604040001.html",
+                            source="Eastmoney",
+                        )
+                    ]
+                )
+            ),
+        )
+        p2 = SimpleNamespace(
+            is_available=True,
+            name="P2",
+            search=MagicMock(return_value=_response([_result("中文资讯", fresh)])),
+        )
+        service._providers = [p1, p2]
+
+        resp = service.search_stock_news("600519", "Kweichow Moutai", max_results=1)
+        self.assertEqual([r.title for r in resp.results], ["Moutai guidance update"])
+        p1.search.assert_called_once()
+        p2.search.assert_not_called()
 
     def test_search_stock_news_exchange_qualified_a_share_still_prefers_chinese(self) -> None:
         """Common SH/SZ-prefixed or suffixed A-share codes should keep Chinese preference."""
@@ -394,6 +440,47 @@ class SearchNewsFreshnessTestCase(unittest.TestCase):
         self.assertEqual(intel["latest_news"].provider, "Mock")
         p1.search.assert_called_once()
         p2.search.assert_called_once()
+
+    def test_search_comprehensive_intel_treats_mainland_domain_result_as_preferred(self) -> None:
+        """Mainland finance domains should satisfy the preferred-language check for A-share intel."""
+        fresh = datetime.now().date().isoformat()
+        service = SearchService(
+            bocha_keys=["dummy_key"],
+            searxng_public_instances_enabled=False,
+            news_max_age_days=3,
+            news_strategy_profile="short",
+        )
+
+        p1 = SimpleNamespace(
+            is_available=True,
+            name="P1",
+            search=MagicMock(
+                return_value=_response(
+                    [
+                        _result(
+                            "Moutai guidance update",
+                            fresh,
+                            snippet="Quarterly update from a mainland finance outlet.",
+                            url="https://finance.eastmoney.com/a/202604040002.html",
+                            source="Eastmoney",
+                        )
+                    ]
+                )
+            ),
+        )
+        p2 = SimpleNamespace(
+            is_available=True,
+            name="P2",
+            search=MagicMock(return_value=_response([_result("中文资讯", fresh)])),
+        )
+        service._providers = [p1, p2]
+
+        with patch("src.search_service.time.sleep"):
+            intel = service.search_comprehensive_intel("600519", "Kweichow Moutai", max_searches=1)
+
+        self.assertEqual([r.title for r in intel["latest_news"].results], ["Moutai guidance update"])
+        p1.search.assert_called_once()
+        p2.search.assert_not_called()
 
     def test_search_comprehensive_intel_brave_locale_matches_market_context(self) -> None:
         """Brave locale hints should also apply to comprehensive intel searches."""
