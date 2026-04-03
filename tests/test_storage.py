@@ -3,6 +3,7 @@ import unittest
 import sys
 import os
 import tempfile
+from unittest.mock import patch
 
 # Ensure src module can be imported
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
@@ -125,6 +126,24 @@ class TestStorage(unittest.TestCase):
                 else:
                     os.environ[key] = value
             temp_dir.cleanup()
+
+    def test_sqlite_write_transactions_begin_immediate(self):
+        DatabaseManager.reset_instance()
+        db = DatabaseManager(db_url="sqlite:///:memory:")
+        session = db.get_session()
+        connection = session.connection()
+
+        try:
+            with patch.object(db, "get_session", return_value=session):
+                with patch.object(connection, "exec_driver_sql", wraps=connection.exec_driver_sql) as mock_exec:
+                    result = db._run_write_transaction("unit-test", lambda current_session: 7)
+
+            self.assertEqual(result, 7)
+            self.assertTrue(
+                any(call.args == ("BEGIN IMMEDIATE",) for call in mock_exec.call_args_list)
+            )
+        finally:
+            DatabaseManager.reset_instance()
 
 if __name__ == '__main__':
     unittest.main()

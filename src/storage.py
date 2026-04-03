@@ -762,6 +762,11 @@ class DatabaseManager:
         for attempt in range(max_retries + 1):
             session = self.get_session()
             try:
+                if self._is_sqlite_engine:
+                    # Acquire the SQLite writer lock before any reads inside
+                    # `write_operation()` so pre-write existence checks and the
+                    # later upsert share one consistent write window.
+                    session.connection().exec_driver_sql("BEGIN IMMEDIATE")
                 result = write_operation(session)
                 session.commit()
                 return result
@@ -1471,9 +1476,9 @@ class DatabaseManager:
                 # SQLite has a per-statement bind-parameter limit (commonly 999).
                 # Each record has ~15 columns, so chunk upserts to stay within bounds.
                 _SQLITE_CHUNK = 50
-                # Count pre-existing rows in chunks (safe IN clause size) before
-                # the upsert so we can derive new-insert count without relying on
-                # timestamps (which can double-count under frozen clocks or races).
+                # `_run_write_transaction()` opens SQLite writes with
+                # `BEGIN IMMEDIATE`, so this pre-upsert count and the later
+                # upsert execute within one stable write window.
                 _COUNT_CHUNK = 500
                 prior_count = sum(
                     session.execute(
