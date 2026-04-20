@@ -6,7 +6,7 @@ import unittest
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
-from src.core.pipeline import StockAnalysisPipeline
+from src.core.pipeline import StockAnalysisPipeline, _DryRunTaskResult
 
 
 class PipelineFetchErrorTestCase(unittest.TestCase):
@@ -127,6 +127,27 @@ class PipelineFetchErrorTestCase(unittest.TestCase):
             ["600519", "000001", "920748"],
         )
         self.assertEqual(mock_target.call_count, 3)
+
+    def test_process_single_stock_returns_step1_result_in_dry_run(self):
+        pipeline = StockAnalysisPipeline.__new__(StockAnalysisPipeline)
+        pipeline.fetch_and_save_stock_data = MagicMock(
+            return_value=(False, "历史K线缓存准备失败")
+        )
+        pipeline.analyze_stock = MagicMock()
+        pipeline._emit_progress = MagicMock()
+
+        result = StockAnalysisPipeline.process_single_stock(
+            pipeline,
+            "600519",
+            skip_analysis=True,
+            current_time=datetime(2026, 3, 28, 1, 0, tzinfo=timezone.utc),
+        )
+
+        self.assertIsInstance(result, _DryRunTaskResult)
+        self.assertEqual(result.code, "600519")
+        self.assertFalse(result.success)
+        self.assertEqual(result.error_message, "历史K线缓存准备失败")
+        pipeline.analyze_stock.assert_not_called()
 
 
 if __name__ == "__main__":

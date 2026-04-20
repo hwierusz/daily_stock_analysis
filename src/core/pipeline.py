@@ -17,6 +17,7 @@ import time
 import uuid
 from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from dataclasses import dataclass
 from datetime import date, datetime, timedelta, timezone
 from typing import List, Dict, Any, Optional, Tuple, Callable
 
@@ -38,6 +39,7 @@ from src.services.social_sentiment_service import SocialSentimentService
 from src.services.stock_history_cache import (
     AGENT_HISTORY_BASELINE_DAYS,
     ensure_min_history_cached,
+    rank_history_bars,
 )
 from src.enums import ReportType
 from src.stock_analyzer import StockTrendAnalyzer, TrendAnalysisResult
@@ -56,6 +58,13 @@ logger = logging.getLogger(__name__)
 # 防御性 guard：当实例绕过 __init__（如测试中 __new__）构造时，
 # double-check 初始化 _single_stock_notify_lock 仍然线程安全。
 _SINGLE_STOCK_NOTIFY_LOCK_INIT_GUARD = threading.Lock()
+
+
+@dataclass
+class _DryRunTaskResult:
+    code: str
+    success: bool
+    error_message: Optional[str] = None
 
 
 class StockAnalysisPipeline:
@@ -383,17 +392,7 @@ class StockAnalysisPipeline:
                 historical_bars = self.db.get_data_range(normalized_code, start_date, end_date)
                 if normalized_code != code:
                     original_bars = self.db.get_data_range(code, start_date, end_date)
-                    normalized_rank = (
-                        (getattr(historical_bars[-1], "date", None) or date.min)
-                        if historical_bars else date.min,
-                        len(historical_bars),
-                    )
-                    original_rank = (
-                        (getattr(original_bars[-1], "date", None) or date.min)
-                        if original_bars else date.min,
-                        len(original_bars),
-                    )
-                    if original_rank > normalized_rank:
+                    if rank_history_bars(original_bars) > rank_history_bars(historical_bars):
                         historical_bars = original_bars
                 if historical_bars:
                     latest_bar_date = getattr(historical_bars[-1], "date", None)
@@ -1281,7 +1280,11 @@ class StockAnalysisPipeline:
             # Step 2: AI 分析
             if skip_analysis:
                 logger.info(f"[{code}] 跳过 AI 分析（dry-run 模式）")
-                return None
+                return _DryRunTaskResult(
+                    code=code,
+                    success=bool(success),
+                    error_message=error,
+                )
             
             effective_query_id = analysis_query_id or self.query_id or uuid.uuid4().hex
             result = self.analyze_stock(code, report_type, query_id=effective_query_id)
@@ -1386,6 +1389,7 @@ class StockAnalysisPipeline:
             )
         
         results: List[AnalysisResult] = []
+        dry_run_success_count = 0
         
         # 使用线程池并发处理
         # 注意：max_workers 设置较低（默认3）以避免触发反爬
@@ -1409,6 +1413,15 @@ class StockAnalysisPipeline:
                 code = future_to_code[future]
                 try:
                     result = future.result()
+                    if dry_run and isinstance(result, _DryRunTaskResult):
+                        if result.success:
+                            dry_run_success_count += 1
+                        else:
+                            logger.warning(
+                                f"[{code}] dry-run 数据准备失败，不计入汇总成功: "
+                                f"{getattr(result, 'error_message', None) or '未知原因'}"
+                            )
+                        continue
                     if result and result.success:
                         results.append(result)
                         if single_stock_notify and send_notification and not dry_run:
@@ -1438,25 +1451,9 @@ class StockAnalysisPipeline:
         # 统计
         elapsed_time = time.time() - start_time
         
-        # dry-run 模式下，数据获取成功即视为成功
+        # dry-run 模式下，直接复用每只股票 Step 1 的真实成功结果
         if dry_run:
-            # 检查哪些股票的最新可复用交易日数据已存在
-            success_count = 0
-            use_agent_mode = self._should_use_agent_mode()
-            for code in stock_codes:
-                target_date = self._resolve_resume_target_date(
-                    code, current_time=resume_reference_time
-                )
-                candidate_codes = [code]
-                if use_agent_mode:
-                    normalized_code = canonical_stock_code(normalize_stock_code(code))
-                    if normalized_code and normalized_code != code:
-                        candidate_codes.insert(0, normalized_code)
-                if any(
-                    self.db.has_today_data(candidate_code, target_date)
-                    for candidate_code in candidate_codes
-                ):
-                    success_count += 1
+            success_count = dry_run_success_count
             fail_count = len(stock_codes) - success_count
         else:
             success_count = len(results)

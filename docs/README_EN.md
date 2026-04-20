@@ -189,7 +189,7 @@ The system will:
 - Send analysis reports to all configured channels
 - Save reports locally
 
-> Resume fetch and `--dry-run` data-existence checks now resolve the "latest reusable trading day" from each market's local timezone and trading calendar. Weekends and holidays reuse the most recent trading day, intraday runs reuse the last completed trading day, and after market close the run skips only if the current trading day's data is already stored. See [Full Guide](./full-guide_EN.md) for the exact rules.
+> Resume fetch and `--dry-run` readiness checks now resolve the "latest reusable trading day" from each market's local timezone and trading calendar. Weekends and holidays reuse the most recent trading day, intraday runs reuse the last completed trading day, and after market close the run can reuse the current trading day. In Agent mode, both `--dry-run` and real execution now require the historical cache to be ready at the Agent baseline depth (currently 240 days) for that target trading day, rather than treating a single stored daily row as sufficient. See [Full Guide](./full-guide_EN.md) for the exact rules.
 
 ---
 

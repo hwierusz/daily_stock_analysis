@@ -25,7 +25,6 @@ _shared_fetcher_manager_lock = Lock()
 @dataclass
 class _FetchAttemptState:
     attempted_days: int = 0
-    successful_days: int = 0
     last_error: Optional[str] = None
 
 
@@ -107,7 +106,8 @@ def _get_latest_bar_date(bars: List[object]) -> Optional[date]:
     return _coerce_to_date(getattr(bars[-1], "date", None))
 
 
-def _rank_bars(bars: List[object]) -> Tuple[date, int]:
+def rank_history_bars(bars: List[object]) -> Tuple[date, int]:
+    """Rank history buckets by freshest bar first, then by available depth."""
     latest_bar_date = _get_latest_bar_date(bars) or date.min
     return latest_bar_date, len(bars)
 
@@ -150,7 +150,6 @@ def _get_attempt_state(attempt_key: Tuple[str, date]) -> _FetchAttemptState:
             return _FetchAttemptState()
         return _FetchAttemptState(
             attempted_days=int(state.attempted_days),
-            successful_days=int(state.successful_days),
             last_error=state.last_error,
         )
 
@@ -159,14 +158,12 @@ def _record_attempt(
     attempt_key: Tuple[str, date],
     *,
     attempted_days: int,
-    successful_days: int = 0,
     last_error: Optional[str] = None,
 ) -> None:
     with _history_fetch_attempts_lock:
         previous = _history_fetch_attempts.get(attempt_key, _FetchAttemptState())
         _history_fetch_attempts[attempt_key] = _FetchAttemptState(
             attempted_days=max(int(previous.attempted_days), int(attempted_days)),
-            successful_days=max(int(previous.successful_days), int(successful_days)),
             last_error=last_error,
         )
 
@@ -207,7 +204,7 @@ def _load_recent_bars_from_db(
             logger.debug("load_recent_bars_from_db(%s): DB lookup failed for %s: %s", stock_code, code, exc)
             continue
 
-        if _rank_bars(bars) > _rank_bars(best_bars):
+        if rank_history_bars(bars) > rank_history_bars(best_bars):
             best_bars = list(bars)
             best_code = code
 
@@ -359,7 +356,6 @@ def ensure_min_history_cached(
             _record_attempt(
                 attempt_key,
                 attempted_days=fetch_days,
-                successful_days=persisted_days,
                 last_error=None,
             )
             logger.info(
@@ -389,7 +385,6 @@ def ensure_min_history_cached(
         _record_attempt(
             attempt_key,
             attempted_days=fetch_days,
-            successful_days=persisted_days if _is_history_fresh(persisted_bars, expected_target_date) else 0,
             last_error=None,
         )
         logger.warning(
