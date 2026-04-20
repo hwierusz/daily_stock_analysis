@@ -149,6 +149,56 @@ class PipelineFetchErrorTestCase(unittest.TestCase):
         self.assertEqual(result.error_message, "历史K线缓存准备失败")
         pipeline.analyze_stock.assert_not_called()
 
+    def test_process_single_stock_passes_frozen_time_to_fetch_and_analyze(self):
+        pipeline = StockAnalysisPipeline.__new__(StockAnalysisPipeline)
+        pipeline.fetch_and_save_stock_data = MagicMock(return_value=(True, None))
+        pipeline.analyze_stock = MagicMock(return_value=None)
+        pipeline._emit_progress = MagicMock()
+        pipeline.query_id = None
+        frozen_time = datetime(2026, 3, 28, 1, 0, tzinfo=timezone.utc)
+
+        StockAnalysisPipeline.process_single_stock(
+            pipeline,
+            "600519",
+            skip_analysis=False,
+            current_time=frozen_time,
+        )
+
+        pipeline.fetch_and_save_stock_data.assert_called_once_with(
+            "600519",
+            current_time=frozen_time,
+        )
+        pipeline.analyze_stock.assert_called_once_with(
+            "600519",
+            unittest.mock.ANY,
+            query_id=unittest.mock.ANY,
+            current_time=frozen_time,
+        )
+
+    def test_process_single_stock_keeps_frozen_time_when_step1_fails(self):
+        pipeline = StockAnalysisPipeline.__new__(StockAnalysisPipeline)
+        pipeline.fetch_and_save_stock_data = MagicMock(
+            return_value=(False, "历史K线缓存准备失败")
+        )
+        pipeline.analyze_stock = MagicMock(return_value=None)
+        pipeline._emit_progress = MagicMock()
+        pipeline.query_id = None
+        frozen_time = datetime(2026, 3, 28, 1, 0, tzinfo=timezone.utc)
+
+        StockAnalysisPipeline.process_single_stock(
+            pipeline,
+            "600519",
+            skip_analysis=False,
+            current_time=frozen_time,
+        )
+
+        pipeline.analyze_stock.assert_called_once_with(
+            "600519",
+            unittest.mock.ANY,
+            query_id=unittest.mock.ANY,
+            current_time=frozen_time,
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

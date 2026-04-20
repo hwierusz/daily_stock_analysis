@@ -279,7 +279,13 @@ class StockAnalysisPipeline:
             logger.error(f"{stock_name}({code}) {error_msg}")
             return False, error_msg
     
-    def analyze_stock(self, code: str, report_type: ReportType, query_id: str) -> Optional[AnalysisResult]:
+    def analyze_stock(
+        self,
+        code: str,
+        report_type: ReportType,
+        query_id: str,
+        current_time: Optional[datetime] = None,
+    ) -> Optional[AnalysisResult]:
         """
         分析单只股票（增强版：含量比、换手率、筹码分析、多维度情报）
         
@@ -295,6 +301,7 @@ class StockAnalysisPipeline:
             query_id: 查询链路关联 id
             code: 股票代码
             report_type: 报告类型
+            current_time: 本轮运行冻结的参考时间，用于统一目标交易日判断
             
         Returns:
             AnalysisResult 或 None（如果分析失败）
@@ -386,8 +393,10 @@ class StockAnalysisPipeline:
             trend_result: Optional[TrendAnalysisResult] = None
             try:
                 normalized_code = canonical_stock_code(normalize_stock_code(code))
-                _mkt = get_market_for_stock(normalized_code)
-                end_date = get_effective_trading_date(_mkt)
+                end_date = self._resolve_resume_target_date(
+                    code,
+                    current_time=current_time,
+                )
                 start_date = end_date - timedelta(days=89)  # ~60 trading days for MA60
                 historical_bars = self.db.get_data_range(normalized_code, start_date, end_date)
                 if normalized_code != code:
@@ -1287,7 +1296,12 @@ class StockAnalysisPipeline:
                 )
             
             effective_query_id = analysis_query_id or self.query_id or uuid.uuid4().hex
-            result = self.analyze_stock(code, report_type, query_id=effective_query_id)
+            result = self.analyze_stock(
+                code,
+                report_type,
+                query_id=effective_query_id,
+                current_time=current_time,
+            )
             
             if result and result.success:
                 logger.info(

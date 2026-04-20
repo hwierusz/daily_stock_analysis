@@ -5,7 +5,7 @@ import asyncio
 import importlib.util
 import logging
 import sys
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta, timezone
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
@@ -266,3 +266,97 @@ def test_pipeline_trend_skips_stale_history_before_agent_context_injection():
     assert analyze_with_agent_call is not None
     assert analyze_with_agent_call.args[7] is None
     assert pipeline.trend_analyzer.analyze.call_count == 0
+
+
+def test_pipeline_trend_uses_frozen_time_to_keep_prefetched_history_fresh():
+    pipeline = _make_pipeline(enable_realtime_quote=False, realtime_quote=None)
+    pipeline.config.agent_mode = True
+    pipeline._analyze_with_agent = MagicMock(return_value=None)
+    pipeline.trend_analyzer.analyze.return_value = SimpleNamespace(
+        trend_status=SimpleNamespace(value="震荡"),
+        buy_signal=SimpleNamespace(value="观望"),
+        signal_score=60,
+    )
+    frozen_time = datetime(2026, 4, 16, 8, 0, tzinfo=timezone.utc)
+
+    def _make_bars(code: str, count: int, *, end_date: date):
+        bars = []
+        for idx in range(count):
+            current_date = end_date - timedelta(days=count - idx - 1)
+            close = 100 + idx
+            bar = MagicMock()
+            bar.date = current_date
+            bar.to_dict.return_value = {
+                "date": current_date,
+                "open": close - 1,
+                "high": close + 1,
+                "low": close - 2,
+                "close": close,
+                "volume": 1000.0,
+            }
+            bars.append(bar)
+        return bars
+
+    pipeline.db.get_data_range.side_effect = [
+        _make_bars("600519", 60, end_date=date(2026, 4, 16)),
+        [],
+    ]
+
+    with patch.object(
+        StockAnalysisPipeline,
+        "_resolve_resume_target_date",
+        return_value=date(2026, 4, 16),
+    ) as mock_target:
+        pipeline.analyze_stock(
+            "SH600519",
+            ReportType.SIMPLE,
+            "q1",
+            current_time=frozen_time,
+        )
+
+    pipeline.trend_analyzer.analyze.assert_called_once()
+    mock_target.assert_called_once_with("SH600519", current_time=frozen_time)
+
+
+def test_pipeline_trend_defaults_to_runtime_target_date_without_frozen_time():
+    pipeline = _make_pipeline(enable_realtime_quote=False, realtime_quote=None)
+    pipeline.config.agent_mode = True
+    pipeline._analyze_with_agent = MagicMock(return_value=None)
+    pipeline.trend_analyzer.analyze.return_value = SimpleNamespace(
+        trend_status=SimpleNamespace(value="震荡"),
+        buy_signal=SimpleNamespace(value="观望"),
+        signal_score=60,
+    )
+
+    def _make_bars(code: str, count: int, *, end_date: date):
+        bars = []
+        for idx in range(count):
+            current_date = end_date - timedelta(days=count - idx - 1)
+            close = 100 + idx
+            bar = MagicMock()
+            bar.date = current_date
+            bar.to_dict.return_value = {
+                "date": current_date,
+                "open": close - 1,
+                "high": close + 1,
+                "low": close - 2,
+                "close": close,
+                "volume": 1000.0,
+            }
+            bars.append(bar)
+        return bars
+
+    pipeline.db.get_data_range.side_effect = [
+        _make_bars("600519", 60, end_date=date(2026, 4, 16)),
+        [],
+    ]
+
+    with patch.object(
+        StockAnalysisPipeline,
+        "_resolve_resume_target_date",
+        return_value=date(2026, 4, 16),
+    ) as mock_target:
+        pipeline.analyze_stock("SH600519", ReportType.SIMPLE, "q1")
+
+    pipeline.trend_analyzer.analyze.assert_called_once()
+    mock_target.assert_called_once_with("SH600519", current_time=None)
