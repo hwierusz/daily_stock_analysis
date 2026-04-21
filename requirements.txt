@@ -10,10 +10,10 @@ schedule>=1.1.0
 loguru>=0.6.0
 
 # Data storage
-sqlite3  # built-in, listed for clarity
+# sqlite3  # built-in, no need to list in requirements.txt
 
 # Notification support
-smtplib  # built-in, listed for clarity
+# smtplib  # built-in, no need to list in requirements.txt
 
 # Optional: Enhanced data fetching
 yfinance>=0.2.0
