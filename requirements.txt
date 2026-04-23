@@ -26,3 +26,5 @@ flake8>=6.0.0
 
 # Personal additions
 jupyter>=1.0.0  # for exploratory analysis notebooks
+ipywidgets>=8.0.0  # interactive widgets for jupyter notebooks
+plotly>=5.11.0  # interactive charts, nicer than static matplotlib for exploration
